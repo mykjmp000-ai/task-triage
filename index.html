@@ -182,7 +182,7 @@
     <div id="tableWrap"><div class="empty">読み込み中...</div></div>
 
     <div class="legend">
-      優先度と固定の指定はカレンダーごとに、この端末のブラウザに保存されます。自動振り分けは固定していないタスクを優先度順・日付が近い順に今日以降へ再配置します。お店の定休日とご自身の休みは自動振り分けの対象日から除外されます。提案日付は「反映する」を押すまでカレンダーには反映されません。
+      一覧は実行予定日(提案日付)の近い順に並びます。優先度と固定の指定はカレンダーごとに、この端末のブラウザに保存されます。自動振り分けは固定していないタスクを、対象期間の中で優先度順・件数上限を守りながら満遍なく配置します(例: 期間13日でタスク4件なら1・5・9・13日目に配置)。業務管理タブはタスク名に「三宅」を含むもののみ表示します。お店の定休日とご自身の休みは、すべてのグループで自動振り分けの対象日から除外されます。提案日付は「反映する」を押すまでカレンダーには反映されません。
     </div>
   </div>
 
@@ -195,7 +195,8 @@
   const CALENDARS = [
     { id: "7e0fb1513497be353b985b54e81818d8cddaae5e8d8bbf14acc0084c9e21d650@group.calendar.google.com", label: "白豆屋" },
     { id: "7eaf5b86281195e21a2b625c5024f68e436b9360b6c230d08949e0bbd2eb64db@group.calendar.google.com", label: "SBL" },
-    { id: "aa464313ad0eafe03af828f70fb2a96128598039bbd5b788781c93f44a71187a@group.calendar.google.com", label: "CVT" }
+    { id: "aa464313ad0eafe03af828f70fb2a96128598039bbd5b788781c93f44a71187a@group.calendar.google.com", label: "CVT" },
+    { id: "97597ca0ec62a87d1b330ff76f35fd0313daeb495fa4cb9228a981a3d8644833@group.calendar.google.com", label: "業務管理", filterMine: true }
   ];
   const OFFDAY_CAL_ID = "992f4356d51e9aa115cded0d392f099b94e5e43f0fdab05795540c15c26bbf63@group.calendar.google.com"; // 【SiLO】スタッフ休(スタイリスト)
   const STORE_CAL_ID = "silo.fukuoka@gmail.com"; // SiLO（定休日）
@@ -321,7 +322,7 @@
   }
 
   // ---------- Calendar API ----------
-  async function fetchCalendarEvents(calId) {
+  async function fetchCalendarEvents(calId, filterMine) {
     const start = addDays(todayStr(), -14);
     const end = addDays(todayStr(), 60);
     const url = new URL("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(calId) + "/events");
@@ -333,7 +334,11 @@
     const res = await apiFetch(url.toString());
     if (!res.ok) throw new Error("カレンダー読み込みに失敗しました (" + res.status + ")");
     const data = await res.json();
-    return (data.items || []).filter(ev => ev.start && ev.start.date && ev.status !== "cancelled");
+    let list = (data.items || []).filter(ev => ev.start && ev.start.date && ev.status !== "cancelled");
+    if (filterMine) {
+      list = list.filter(ev => (ev.summary || "").indexOf("三宅") !== -1);
+    }
+    return list;
   }
 
   async function fetchByQuery(calId, query, start, end) {
@@ -412,7 +417,7 @@
   async function loadEvents(idx, forceReload) {
     const calId = CALENDARS[idx].id;
     if (forceReload || !eventCache[calId]) {
-      eventCache[calId] = await fetchCalendarEvents(calId);
+      eventCache[calId] = await fetchCalendarEvents(calId, CALENDARS[idx].filterMine);
     }
     events = eventCache[calId].map(ev => {
       const m = meta[ev.id] || {};
@@ -424,7 +429,7 @@
         pinned: !!m.pinned,
         proposedDateStr: String(ev.start.date).slice(0, 10)
       };
-    }).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+    }).sort((a, b) => a.proposedDateStr.localeCompare(b.proposedDateStr));
   }
 
   function computeLoad(list) {
@@ -439,6 +444,7 @@
       wrap.innerHTML = '<div class="empty">対象期間に終日タスクが見つかりませんでした</div>';
       return;
     }
+    events.sort((a, b) => a.proposedDateStr.localeCompare(b.proposedDateStr) || a.dateStr.localeCompare(b.dateStr));
     const load = computeLoad(events);
     const capacity = parseFloat(document.getElementById("capacity").value) || 3;
 
@@ -486,7 +492,7 @@
       });
       card.querySelector(".proposed").addEventListener("change", (e2) => {
         ev.proposedDateStr = e2.target.value;
-        checkDirty();
+        render();
       });
     });
     checkDirty();
@@ -521,22 +527,28 @@
       .slice()
       .sort((a, b) => (prioRank[a.priority] - prioRank[b.priority]) || a.dateStr.localeCompare(b.dateStr));
 
-    movable.forEach(e => {
-      let placed = false;
-      for (const d of dayList) {
-        if ((dayLoad[d] || 0) + 1 <= capacity + 1e-9) {
-          e.proposedDateStr = d;
-          dayLoad[d] = (dayLoad[d] || 0) + 1;
-          placed = true;
-          break;
-        }
+    // spread tasks evenly across the available days in the horizon, instead of packing them
+    // as early as possible. e.g. 4 tasks over 13 available days -> day 1, 5, 9, 13.
+    const N = movable.length;
+    const M = dayList.length;
+    movable.forEach((e, k) => {
+      let targetIdx = N <= 1 ? 0 : Math.round((k * (M - 1)) / (N - 1));
+      if (targetIdx < 0) targetIdx = 0;
+      if (targetIdx > M - 1) targetIdx = M - 1;
+
+      let foundIdx = -1;
+      for (let d = 0; d < M; d++) {
+        const lo = targetIdx - d, hi = targetIdx + d;
+        if (lo >= 0 && (dayLoad[dayList[lo]] || 0) + 1 <= capacity + 1e-9) { foundIdx = lo; break; }
+        if (hi < M && hi !== lo && (dayLoad[dayList[hi]] || 0) + 1 <= capacity + 1e-9) { foundIdx = hi; break; }
       }
-      if (!placed) {
-        let best = dayList[0], bestLoad = Infinity;
-        dayList.forEach(d => { if ((dayLoad[d] || 0) < bestLoad) { bestLoad = dayLoad[d] || 0; best = d; } });
-        e.proposedDateStr = best;
-        dayLoad[best] = (dayLoad[best] || 0) + 1;
+      if (foundIdx === -1) {
+        let best = 0, bestLoad = Infinity;
+        for (let i = 0; i < M; i++) { if ((dayLoad[dayList[i]] || 0) < bestLoad) { bestLoad = dayLoad[dayList[i]] || 0; best = i; } }
+        foundIdx = best;
       }
+      e.proposedDateStr = dayList[foundIdx];
+      dayLoad[dayList[foundIdx]] = (dayLoad[dayList[foundIdx]] || 0) + 1;
     });
 
     render();
