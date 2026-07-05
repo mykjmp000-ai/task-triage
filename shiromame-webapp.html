@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef1f6">
+<title>タスク トリアージ</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #eef1f6;
+    --sl: #ffffff;
+    --sd: #c7cedb;
+    --text: #33384a;
+    --muted: #8a90a3;
+    --green: #35c78a;
+    --green2: #29b57a;
+    --blue: #4aa3ff;
+    --blue2: #2f8ee8;
+    --purple: #8b7cf6;
+    --purple2: #7461ef;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+    max-width: 460px;
+    margin: 0 auto;
+    padding: 18px 16px 40px;
+    color: var(--text);
+  }
+  .neu {
+    background: var(--bg);
+    border-radius: 20px;
+    box-shadow: 7px 7px 14px var(--sd), -7px -7px 14px var(--sl);
+  }
+  .neu-in {
+    background: var(--bg);
+    border-radius: 14px;
+    box-shadow: inset 4px 4px 8px var(--sd), inset -4px -4px 8px var(--sl);
+  }
+  .hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .hdr-left { display:flex; align-items:center; gap:10px; }
+  .app-icon {
+    width:40px; height:40px; border-radius:14px; flex-shrink:0;
+    background: linear-gradient(135deg, var(--green), var(--blue));
+    display:flex; align-items:center; justify-content:center; font-size:18px;
+  }
+  .hdr h1 { margin:0; font-size:16px; font-weight:700; }
+  .hdr .sub { font-size:11px; color:var(--muted); margin-top:1px; }
+  .icon-btn {
+    width:38px; height:38px; border-radius:12px; border:none; display:flex; align-items:center; justify-content:center;
+    background: var(--bg); box-shadow: 4px 4px 8px var(--sd), -4px -4px 8px var(--sl);
+    font-size:15px; cursor:pointer; color: var(--muted);
+  }
+  .icon-btn:active { box-shadow: inset 3px 3px 6px var(--sd), inset -3px -3px 6px var(--sl); }
+  .icon-row { display:flex; gap:8px; }
+
+  .gate { padding: 44px 24px; text-align:center; margin-top: 20px; }
+  .gate .app-icon { width:64px; height:64px; border-radius:20px; font-size:28px; margin:0 auto 18px; }
+  .gate p { color:var(--muted); font-size:13px; margin: 0 0 22px; line-height:1.6; }
+  .btn {
+    border:none; cursor:pointer; font-weight:700; font-size:14px; border-radius:16px;
+    padding:14px 20px; width:100%; color:#fff; box-shadow: 5px 5px 10px var(--sd), -5px -5px 10px var(--sl);
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-green { background: linear-gradient(135deg, var(--green), var(--green2)); }
+  .btn-blue { background: linear-gradient(135deg, var(--blue), var(--blue2)); }
+  .btn-flat {
+    background: var(--bg); color: var(--muted); box-shadow: 4px 4px 8px var(--sd), -4px -4px 8px var(--sl);
+  }
+  .btn:disabled { background: var(--bg); color:#b7bccb; box-shadow: inset 3px 3px 6px var(--sd), inset -3px -3px 6px var(--sl); cursor:not-allowed; }
+
+  #configWarning { display:none; background:#ffe3e3; color:#c0392b; padding:12px 14px; border-radius:14px; font-size:12px; margin-bottom:14px; line-height:1.5; }
+
+  .tabs { display:flex; gap:6px; padding:6px; margin-bottom:14px; }
+  .tabs button {
+    flex:1; border:none; padding:10px 4px; font-size:12.5px; font-weight:700; border-radius:12px; cursor:pointer;
+    background:transparent; color:var(--muted);
+  }
+  .tabs button.active { background: linear-gradient(135deg, var(--blue), var(--purple)); color:#fff; box-shadow: 3px 3px 7px var(--sd), -3px -3px 7px var(--sl); }
+
+  .settings { display:flex; gap:10px; padding:14px; margin-bottom:14px; }
+  .setting { flex:1; text-align:center; }
+  .setting label { display:block; font-size:10.5px; color:var(--muted); margin-bottom:6px; font-weight:600; }
+  .setting input {
+    width:100%; border:none; text-align:center; font-size:16px; font-weight:700; color:var(--text);
+    padding:8px 4px; border-radius:12px; background:var(--bg);
+    box-shadow: inset 3px 3px 6px var(--sd), inset -3px -3px 6px var(--sl);
+  }
+
+  .action-row { display:flex; gap:10px; margin-bottom:16px; }
+  .action-row .btn { font-size:12.5px; padding:13px 8px; }
+
+  .status { font-size:12px; padding:10px 14px; border-radius:14px; margin-bottom:14px; font-weight:600; }
+  .status.ok { background:#d9f5e8; color:#1e8a5c; }
+  .status.err { background:#ffe3e3; color:#c0392b; }
+  .status.info { background:#e2ecff; color:#2a5ea8; }
+
+  .empty { padding:36px 20px; text-align:center; color:var(--muted); font-size:12.5px; }
+
+  .card { padding:14px 16px; margin-bottom:12px; }
+  .card.overload { box-shadow: 7px 7px 14px var(--sd), -7px -7px 14px var(--sl), inset 0 0 0 2px #ffd3d3; }
+  .card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-wrap:wrap; gap:4px; }
+  .card-date { font-size:12px; font-weight:700; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .daycount { font-size:10px; font-weight:700; padding:2px 7px; border-radius:8px; background:var(--bg); box-shadow: inset 2px 2px 4px var(--sd), inset -2px -2px 4px var(--sl); color:var(--muted); }
+  .blocked-tag { font-size:10px; font-weight:700; background: var(--red); color:#fff; border-radius:8px; padding:2px 7px; }
+  .card-title { font-size:13.5px; font-weight:600; line-height:1.5; margin-bottom:12px; word-break: break-word; }
+
+  .card-bottom { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .prio-btns { display:flex; gap:5px; }
+  .prio-btns button {
+    width:32px; height:32px; border-radius:10px; border:none; font-size:11px; font-weight:700; cursor:pointer;
+    background:var(--bg); color:var(--muted); box-shadow: 3px 3px 6px var(--sd), -3px -3px 6px var(--sl);
+  }
+  .prio-btns button.active-high { background: linear-gradient(135deg, var(--purple), var(--purple2)); color:#fff; box-shadow:none; }
+  .prio-btns button.active-mid { background: linear-gradient(135deg, var(--blue), var(--blue2)); color:#fff; box-shadow:none; }
+  .prio-btns button.active-low { background: linear-gradient(135deg, var(--green), var(--green2)); color:#fff; box-shadow:none; }
+
+  .pin-toggle { position:relative; width:44px; height:26px; border-radius:13px; background:var(--bg); box-shadow: inset 3px 3px 6px var(--sd), inset -3px -3px 6px var(--sl); flex-shrink:0; cursor:pointer; }
+  .pin-toggle .knob { position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow: 2px 2px 4px var(--sd); transition: left .15s ease; display:flex; align-items:center; justify-content:center; font-size:10px; }
+  .pin-toggle.on { background: linear-gradient(135deg, var(--purple), var(--purple2)); box-shadow:none; }
+  .pin-toggle.on .knob { left:21px; }
+
+  .proposed-wrap { flex-basis:100%; margin-top:10px; }
+  .proposed-wrap label { font-size:10px; color:var(--muted); font-weight:600; display:block; margin-bottom:4px; }
+  input[type=date].proposed {
+    width:100%; border:none; padding:9px 10px; font-size:12.5px; border-radius:10px; color:var(--text);
+    background:var(--bg); box-shadow: inset 3px 3px 6px var(--sd), inset -3px -3px 6px var(--sl);
+  }
+
+  .legend { font-size:10.5px; color:var(--muted); margin-top:6px; line-height:1.7; padding: 0 4px; }
+</style>
+</head>
+<body>
+
+  <div class="hdr">
+    <div class="hdr-left">
+      <div class="app-icon">📋</div>
+      <div>
+        <h1 id="titleText">タスク トリアージ</h1>
+        <div class="sub">終日タスクを自動リスケ</div>
+      </div>
+    </div>
+    <div class="icon-row" id="headerIcons" style="display:none;">
+      <button class="icon-btn" id="reloadBtn" title="再読み込み">⟳</button>
+      <button class="icon-btn" id="signOutBtn" title="ログアウト">⏻</button>
+    </div>
+  </div>
+
+  <div id="configWarning"></div>
+
+  <div id="gate" class="gate neu">
+    <div class="app-icon">🔒</div>
+    <p>Googleアカウントでログインすると、<br>カレンダーのタスクを読み込みます。</p>
+    <button class="btn btn-blue" id="signInBtn">Googleでログイン</button>
+  </div>
+
+  <div id="main" style="display:none;">
+    <div class="tabs neu" id="tabs"></div>
+
+    <div class="settings neu">
+      <div class="setting">
+        <label>1日の件数上限</label>
+        <input id="capacity" type="number" min="1" step="1" value="3" inputmode="numeric">
+      </div>
+      <div class="setting">
+        <label>対象期間(日)</label>
+        <input id="horizon" type="number" min="3" step="1" value="21" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="action-row">
+      <button class="btn btn-flat" id="spreadBtn">自動振り分け</button>
+      <button class="btn btn-green" id="applyBtn" disabled>反映する</button>
+    </div>
+
+    <div id="statusBox"></div>
+    <div id="tableWrap"><div class="empty">読み込み中...</div></div>
+
+    <div class="legend">
+      優先度と固定の指定はカレンダーごとに、この端末のブラウザに保存されます。自動振り分けは固定していないタスクを優先度順・日付が近い順に今日以降へ再配置します。お店の定休日とご自身の休みは自動振り分けの対象日から除外されます。提案日付は「反映する」を押すまでカレンダーには反映されません。
+    </div>
+  </div>
+
+<script>
+(function () {
+  // ============================================================
+  // 設定: 下記を自分の環境に合わせて書き換えてください
+  // ============================================================
+  const CLIENT_ID = "669116631-kjc5jokj917hlbasvsf06jneh5rj6r1q.apps.googleusercontent.com"; // Google Cloud ConsoleのOAuthクライアントID
+  const CALENDARS = [
+    { id: "7e0fb1513497be353b985b54e81818d8cddaae5e8d8bbf14acc0084c9e21d650@group.calendar.google.com", label: "白豆屋" },
+    { id: "7eaf5b86281195e21a2b625c5024f68e436b9360b6c230d08949e0bbd2eb64db@group.calendar.google.com", label: "SBL" },
+    { id: "aa464313ad0eafe03af828f70fb2a96128598039bbd5b788781c93f44a71187a@group.calendar.google.com", label: "CVT" }
+  ];
+  const OFFDAY_CAL_ID = "992f4356d51e9aa115cded0d392f099b94e5e43f0fdab05795540c15c26bbf63@group.calendar.google.com"; // 【SiLO】スタッフ休(スタイリスト)
+  const STORE_CAL_ID = "silo.fukuoka@gmail.com"; // SiLO（定休日）
+  // ============================================================
+
+  const SCOPES = "https://www.googleapis.com/auth/calendar.events";
+  const LS_PREFIX = "task_triage_meta_v2_";
+
+  let tokenClient = null;
+  let accessToken = null;
+  let activeIdx = 0;
+  let events = [];
+  const eventCache = {};
+  let meta = {};
+  let blockedDates = null;
+
+  if (!CLIENT_ID || CLIENT_ID.indexOf("YOUR_CLIENT_ID") === 0) {
+    const w = document.getElementById("configWarning");
+    w.style.display = "block";
+    w.textContent = "CLIENT_ID が未設定です。index.html 内の CLIENT_ID を、Google Cloud Console で発行したOAuthクライアントIDに書き換えてください。";
+  }
+
+  function loadMeta(calId) {
+    try { return JSON.parse(localStorage.getItem(LS_PREFIX + calId) || "{}"); } catch (e) { return {}; }
+  }
+  function saveMeta(calId) {
+    try { localStorage.setItem(LS_PREFIX + calId, JSON.stringify(meta)); } catch (e) {}
+  }
+
+  function todayStr() {
+    return new Date().toISOString().slice(0, 10);
+  }
+  function addDays(dateStr, n) {
+    const d = new Date(dateStr + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // ---------- Google OAuth (Identity Services) ----------
+  function initGis() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: (resp) => {
+        if (resp && resp.access_token) {
+          accessToken = resp.access_token;
+          onSignedIn();
+        }
+      }
+    });
+  }
+
+  function signIn() {
+    tokenClient.requestAccessToken({ prompt: "consent" });
+  }
+
+  function signOut() {
+    if (accessToken) {
+      google.accounts.oauth2.revoke(accessToken, () => {});
+    }
+    accessToken = null;
+    document.getElementById("main").style.display = "none";
+    document.getElementById("headerIcons").style.display = "none";
+    document.getElementById("gate").style.display = "block";
+  }
+
+  function refreshTokenSilently() {
+    return new Promise((resolve, reject) => {
+      tokenClient.callback = (resp) => {
+        if (resp && resp.access_token) {
+          accessToken = resp.access_token;
+          resolve();
+        } else {
+          reject(new Error("token refresh failed"));
+        }
+      };
+      tokenClient.requestAccessToken({ prompt: "" });
+    });
+  }
+
+  async function apiFetch(url, options) {
+    options = options || {};
+    options.headers = Object.assign({}, options.headers, { Authorization: "Bearer " + accessToken });
+    let res = await fetch(url, options);
+    if (res.status === 401) {
+      await refreshTokenSilently();
+      options.headers.Authorization = "Bearer " + accessToken;
+      res = await fetch(url, options);
+    }
+    return res;
+  }
+
+  async function onSignedIn() {
+    document.getElementById("gate").style.display = "none";
+    document.getElementById("main").style.display = "block";
+    document.getElementById("headerIcons").style.display = "flex";
+    renderTabs();
+    await switchTab(0);
+  }
+
+  // ---------- Calendar API ----------
+  async function fetchCalendarEvents(calId) {
+    const start = addDays(todayStr(), -14);
+    const end = addDays(todayStr(), 60);
+    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(calId) + "/events");
+    url.searchParams.set("timeMin", start + "T00:00:00+09:00");
+    url.searchParams.set("timeMax", end + "T00:00:00+09:00");
+    url.searchParams.set("singleEvents", "true");
+    url.searchParams.set("maxResults", "250");
+    url.searchParams.set("orderBy", "startTime");
+    const res = await apiFetch(url.toString());
+    if (!res.ok) throw new Error("カレンダー読み込みに失敗しました (" + res.status + ")");
+    const data = await res.json();
+    return (data.items || []).filter(ev => ev.start && ev.start.date && ev.status !== "cancelled");
+  }
+
+  async function fetchByQuery(calId, query, start, end) {
+    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(calId) + "/events");
+    url.searchParams.set("timeMin", start + "T00:00:00+09:00");
+    url.searchParams.set("timeMax", end + "T00:00:00+09:00");
+    url.searchParams.set("singleEvents", "true");
+    url.searchParams.set("maxResults", "100");
+    url.searchParams.set("q", query);
+    const res = await apiFetch(url.toString());
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.items || [];
+  }
+
+  async function loadBlockedDates() {
+    blockedDates = new Set();
+    const start = addDays(todayStr(), -14);
+    const end = addDays(todayStr(), 90);
+    try {
+      const [storeItems, offItems] = await Promise.all([
+        fetchByQuery(STORE_CAL_ID, "定休", start, end),
+        fetchByQuery(OFFDAY_CAL_ID, "三宅", start, end)
+      ]);
+      storeItems.forEach(ev => {
+        if (ev.start && ev.start.date && ev.status !== "cancelled") blockedDates.add(String(ev.start.date).slice(0, 10));
+      });
+      offItems.forEach(ev => {
+        if (ev.start && ev.start.date && ev.status !== "cancelled" && (ev.summary || "").indexOf("三宅") !== -1) {
+          blockedDates.add(String(ev.start.date).slice(0, 10));
+        }
+      });
+    } catch (e) {
+      // proceed without blocked-date awareness if this fails
+    }
+  }
+
+  async function patchEventDate(calId, eventId, dateStr) {
+    const url = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(calId) + "/events/" + encodeURIComponent(eventId) + "?sendUpdates=none";
+    const res = await apiFetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: { date: dateStr }, end: { date: addDays(dateStr, 1) } })
+    });
+    if (!res.ok) throw new Error("更新に失敗しました (" + res.status + ")");
+    return res.json();
+  }
+
+  // ---------- UI ----------
+  function renderTabs() {
+    const wrap = document.getElementById("tabs");
+    wrap.innerHTML = CALENDARS.map((c, i) =>
+      '<button data-idx="' + i + '" class="' + (i === activeIdx ? "active" : "") + '">' + escapeHtml(c.label) + "</button>"
+    ).join("");
+    wrap.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => switchTab(parseInt(btn.getAttribute("data-idx"), 10)));
+    });
+  }
+
+  async function switchTab(idx) {
+    activeIdx = idx;
+    renderTabs();
+    document.getElementById("titleText").textContent = CALENDARS[idx].label + " トリアージ";
+    document.getElementById("statusBox").innerHTML = "";
+    meta = loadMeta(CALENDARS[idx].id);
+    document.getElementById("tableWrap").innerHTML = '<div class="empty">読み込み中...</div>';
+    try {
+      if (blockedDates === null) await loadBlockedDates();
+      await loadEvents(idx);
+      render();
+    } catch (err) {
+      document.getElementById("tableWrap").innerHTML = '<div class="empty">' + escapeHtml(String(err.message || err)) + "</div>";
+    }
+  }
+
+  async function loadEvents(idx, forceReload) {
+    const calId = CALENDARS[idx].id;
+    if (forceReload || !eventCache[calId]) {
+      eventCache[calId] = await fetchCalendarEvents(calId);
+    }
+    events = eventCache[calId].map(ev => {
+      const m = meta[ev.id] || {};
+      return {
+        id: ev.id,
+        summary: ev.summary || "(無題)",
+        dateStr: String(ev.start.date).slice(0, 10),
+        priority: m.priority || "mid",
+        pinned: !!m.pinned,
+        proposedDateStr: String(ev.start.date).slice(0, 10)
+      };
+    }).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+  }
+
+  function computeLoad(list) {
+    const load = {};
+    list.forEach(e => { load[e.dateStr] = (load[e.dateStr] || 0) + 1; });
+    return load;
+  }
+
+  function render() {
+    const wrap = document.getElementById("tableWrap");
+    if (events.length === 0) {
+      wrap.innerHTML = '<div class="empty">対象期間に終日タスクが見つかりませんでした</div>';
+      return;
+    }
+    const load = computeLoad(events);
+    const capacity = parseFloat(document.getElementById("capacity").value) || 3;
+
+    let html = "";
+    events.forEach(e => {
+      const overloaded = (load[e.dateStr] || 0) > capacity;
+      const isBlocked = blockedDates && blockedDates.has(e.dateStr);
+      html += '<div class="card neu ' + (overloaded ? "overload" : "") + '" data-id="' + e.id + '">';
+      html += '<div class="card-top">';
+      html += '<div class="card-date">' + e.dateStr + (isBlocked ? '<span class="blocked-tag">定休/休み</span>' : '') + '</div>';
+      html += '<div class="daycount">' + (load[e.dateStr] || 0) + '件/日</div>';
+      html += '</div>';
+      html += '<div class="card-title">' + escapeHtml(e.summary) + '</div>';
+      html += '<div class="card-bottom">';
+      html += '<div class="prio-btns">' +
+        '<button data-prio="low" class="' + (e.priority === "low" ? "active-low" : "") + '">低</button>' +
+        '<button data-prio="mid" class="' + (e.priority === "mid" ? "active-mid" : "") + '">中</button>' +
+        '<button data-prio="high" class="' + (e.priority === "high" ? "active-high" : "") + '">高</button>' +
+        "</div>";
+      html += '<div class="pin-toggle ' + (e.pinned ? "on" : "") + '" title="固定"><div class="knob">📌</div></div>';
+      html += '<div class="proposed-wrap"><label>提案日付</label><input type="date" class="proposed" value="' + e.proposedDateStr + '" /></div>';
+      html += "</div>"; // card-bottom
+      html += "</div>"; // card
+    });
+    wrap.innerHTML = html;
+
+    wrap.querySelectorAll(".card[data-id]").forEach(card => {
+      const id = card.getAttribute("data-id");
+      const ev = events.find(x => x.id === id);
+      card.querySelectorAll(".prio-btns button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          ev.priority = btn.getAttribute("data-prio");
+          meta[id] = meta[id] || {};
+          meta[id].priority = ev.priority;
+          saveMeta(CALENDARS[activeIdx].id);
+          render();
+        });
+      });
+      card.querySelector(".pin-toggle").addEventListener("click", (e2) => {
+        ev.pinned = !ev.pinned;
+        meta[id] = meta[id] || {};
+        meta[id].pinned = ev.pinned;
+        saveMeta(CALENDARS[activeIdx].id);
+        render();
+      });
+      card.querySelector(".proposed").addEventListener("change", (e2) => {
+        ev.proposedDateStr = e2.target.value;
+        checkDirty();
+      });
+    });
+    checkDirty();
+  }
+
+  function checkDirty() {
+    const dirty = events.some(e => e.proposedDateStr !== e.dateStr);
+    document.getElementById("applyBtn").disabled = !dirty;
+  }
+
+  function autoSpread() {
+    const capacity = parseFloat(document.getElementById("capacity").value) || 3;
+    const horizon = parseInt(document.getElementById("horizon").value, 10) || 21;
+    const start = todayStr();
+    const dayList = [];
+    for (let i = 0; i < horizon; i++) {
+      const d = addDays(start, i);
+      if (!blockedDates || !blockedDates.has(d)) dayList.push(d);
+    }
+
+    const dayLoad = {};
+    dayList.forEach(d => dayLoad[d] = 0);
+    events.forEach(e => {
+      if (e.pinned) {
+        e.proposedDateStr = e.dateStr;
+        if (dayLoad[e.dateStr] !== undefined) dayLoad[e.dateStr] += 1;
+      }
+    });
+
+    const prioRank = { high: 0, mid: 1, low: 2 };
+    const movable = events.filter(e => !e.pinned)
+      .slice()
+      .sort((a, b) => (prioRank[a.priority] - prioRank[b.priority]) || a.dateStr.localeCompare(b.dateStr));
+
+    movable.forEach(e => {
+      let placed = false;
+      for (const d of dayList) {
+        if ((dayLoad[d] || 0) + 1 <= capacity + 1e-9) {
+          e.proposedDateStr = d;
+          dayLoad[d] = (dayLoad[d] || 0) + 1;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        let best = dayList[0], bestLoad = Infinity;
+        dayList.forEach(d => { if ((dayLoad[d] || 0) < bestLoad) { bestLoad = dayLoad[d] || 0; best = d; } });
+        e.proposedDateStr = best;
+        dayLoad[best] = (dayLoad[best] || 0) + 1;
+      }
+    });
+
+    render();
+    setStatus(movable.length + '件のタスクを ' + start + ' 〜 ' + dayList[dayList.length - 1] + ' に振り分けました。内容を確認して反映してください。', "info");
+  }
+
+  function setStatus(msg, kind) {
+    document.getElementById("statusBox").innerHTML = '<div class="status ' + kind + '">' + msg + "</div>";
+  }
+
+  async function applyChanges() {
+    const calId = CALENDARS[activeIdx].id;
+    const changed = events.filter(e => e.proposedDateStr !== e.dateStr);
+    if (changed.length === 0) return;
+    document.getElementById("applyBtn").disabled = true;
+    setStatus("反映中... (0/" + changed.length + ")", "info");
+    let done = 0, failed = 0;
+    for (const e of changed) {
+      try {
+        await patchEventDate(calId, e.id, e.proposedDateStr);
+        e.dateStr = e.proposedDateStr;
+        const cached = eventCache[calId] || [];
+        const rawEv = cached.find(r => r.id === e.id);
+        if (rawEv) rawEv.start = { date: e.dateStr };
+        done++;
+      } catch (err) {
+        failed++;
+      }
+      setStatus("反映中... (" + (done + failed) + "/" + changed.length + ")", "info");
+    }
+    if (failed === 0) {
+      setStatus(done + "件のタスクの日付をカレンダーに反映しました。", "ok");
+    } else {
+      setStatus(done + "件反映しましたが、" + failed + "件は失敗しました。", "err");
+    }
+    render();
+  }
+
+  document.getElementById("signInBtn").addEventListener("click", signIn);
+  document.getElementById("signOutBtn").addEventListener("click", signOut);
+  document.getElementById("spreadBtn").addEventListener("click", autoSpread);
+  document.getElementById("applyBtn").addEventListener("click", applyChanges);
+  document.getElementById("reloadBtn").addEventListener("click", () => loadEvents(activeIdx, true).then(render));
+
+  window.addEventListener("load", () => {
+    const tryInit = () => {
+      if (window.google && google.accounts && google.accounts.oauth2) {
+        initGis();
+      } else {
+        setTimeout(tryInit, 100);
+      }
+    };
+    tryInit();
+  });
+})();
+</script>
+</body>
+</html>
