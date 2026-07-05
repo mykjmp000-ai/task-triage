@@ -155,6 +155,7 @@
   <div id="gate" class="gate neu">
     <div class="app-icon">🔒</div>
     <p>Googleアカウントでログインすると、<br>カレンダーのタスクを読み込みます。</p>
+    <div id="gateStatus" style="font-size:12px; color:var(--blue); font-weight:700; margin-bottom:10px; min-height:16px;"></div>
     <button class="btn btn-blue" id="signInBtn">Googleでログイン</button>
   </div>
 
@@ -202,6 +203,7 @@
 
   const SCOPES = "https://www.googleapis.com/auth/calendar.events";
   const LS_PREFIX = "task_triage_meta_v2_";
+  const AUTH_FLAG_KEY = "task_triage_auth_granted";
 
   let tokenClient = null;
   let accessToken = null;
@@ -237,6 +239,11 @@
   }
 
   // ---------- Google OAuth (Identity Services) ----------
+  function setGateStatus(msg) {
+    const el = document.getElementById("gateStatus");
+    if (el) el.textContent = msg || "";
+  }
+
   function initGis() {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -244,10 +251,24 @@
       callback: (resp) => {
         if (resp && resp.access_token) {
           accessToken = resp.access_token;
+          try { localStorage.setItem(AUTH_FLAG_KEY, "1"); } catch (e) {}
+          setGateStatus("");
           onSignedIn();
+        } else {
+          // silent attempt failed (session expired / consent revoked) — fall back to manual button
+          setGateStatus("");
         }
       }
     });
+
+    let alreadyGranted = false;
+    try { alreadyGranted = localStorage.getItem(AUTH_FLAG_KEY) === "1"; } catch (e) {}
+    if (alreadyGranted) {
+      setGateStatus("自動的にログインしています...");
+      // if this silent attempt doesn't resolve quickly, reveal the manual button again
+      setTimeout(() => { setGateStatus(""); }, 4000);
+      tokenClient.requestAccessToken({ prompt: "" });
+    }
   }
 
   function signIn() {
@@ -259,6 +280,7 @@
       google.accounts.oauth2.revoke(accessToken, () => {});
     }
     accessToken = null;
+    try { localStorage.removeItem(AUTH_FLAG_KEY); } catch (e) {}
     document.getElementById("main").style.display = "none";
     document.getElementById("headerIcons").style.display = "none";
     document.getElementById("gate").style.display = "block";
