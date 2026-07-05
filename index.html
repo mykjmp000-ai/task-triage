@@ -213,6 +213,7 @@
   const eventCache = {};
   let meta = {};
   let blockedDates = null;
+  let blockedDatesWarning = "";
 
   if (!CLIENT_ID || CLIENT_ID.indexOf("YOUR_CLIENT_ID") === 0) {
     const w = document.getElementById("configWarning");
@@ -356,23 +357,36 @@
 
   async function loadBlockedDates() {
     blockedDates = new Set();
+    blockedDatesWarning = "";
     const start = addDays(todayStr(), -14);
     const end = addDays(todayStr(), 90);
+    let storeCount = null, offCount = null;
     try {
-      const [storeItems, offItems] = await Promise.all([
-        fetchByQuery(STORE_CAL_ID, "定休", start, end),
-        fetchByQuery(OFFDAY_CAL_ID, "三宅", start, end)
-      ]);
+      const storeItems = await fetchByQuery(STORE_CAL_ID, "定休", start, end);
+      storeCount = storeItems.length;
       storeItems.forEach(ev => {
         if (ev.start && ev.start.date && ev.status !== "cancelled") blockedDates.add(String(ev.start.date).slice(0, 10));
       });
+    } catch (e) {
+      storeCount = -1;
+    }
+    try {
+      const offItems = await fetchByQuery(OFFDAY_CAL_ID, "三宅", start, end);
+      offCount = offItems.length;
       offItems.forEach(ev => {
         if (ev.start && ev.start.date && ev.status !== "cancelled" && (ev.summary || "").indexOf("三宅") !== -1) {
           blockedDates.add(String(ev.start.date).slice(0, 10));
         }
       });
     } catch (e) {
-      // proceed without blocked-date awareness if this fails
+      offCount = -1;
+    }
+    // surface a visible warning instead of silently proceeding with an incomplete
+    // blocked-dates set (this previously caused tasks to land on 定休日 unnoticed)
+    if (storeCount === -1 || storeCount === 0) {
+      blockedDatesWarning = "店休日(SiLOカレンダーの「定休」)の取得に失敗、または0件でした。自動振り分けが定休日を避けられていない可能性があります。再読み込みしてください。";
+    } else if (offCount === -1 || offCount === 0) {
+      blockedDatesWarning = "ご自身の休み(【SiLO】スタッフ休の「三宅」)の取得に失敗、または0件でした。自動振り分けが休みの日を避けられていない可能性があります。再読み込みしてください。";
     }
   }
 
@@ -406,9 +420,10 @@
     meta = loadMeta(CALENDARS[idx].id);
     document.getElementById("tableWrap").innerHTML = '<div class="empty">読み込み中...</div>';
     try {
-      if (blockedDates === null) await loadBlockedDates();
+      if (blockedDates === null || blockedDatesWarning) await loadBlockedDates();
       await loadEvents(idx);
       render();
+      if (blockedDatesWarning) setStatus(blockedDatesWarning, "err");
     } catch (err) {
       document.getElementById("tableWrap").innerHTML = '<div class="empty">' + escapeHtml(String(err.message || err)) + "</div>";
     }
@@ -552,7 +567,11 @@
     });
 
     render();
-    setStatus(movable.length + '件のタスクを ' + start + ' 〜 ' + dayList[dayList.length - 1] + ' に振り分けました。内容を確認して反映してください。', "info");
+    if (blockedDatesWarning) {
+      setStatus(blockedDatesWarning, "err");
+    } else {
+      setStatus(movable.length + '件のタスクを ' + start + ' 〜 ' + dayList[dayList.length - 1] + ' に振り分けました。内容を確認して反映してください。', "info");
+    }
   }
 
   function setStatus(msg, kind) {
