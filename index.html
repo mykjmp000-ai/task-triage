@@ -182,7 +182,7 @@
     <div id="tableWrap"><div class="empty">読み込み中...</div></div>
 
     <div class="legend">
-      一覧は実行予定日(提案日付)の近い順に並びます。優先度と固定の指定はカレンダーごとに、この端末のブラウザに保存されます。自動振り分けは固定していないタスクを、対象期間の中で優先度順・件数上限を守りながら満遍なく配置します(例: 期間13日でタスク4件なら1・5・9・13日目に配置)。業務管理タブはタスク名に「三宅」を含むもののみ表示します。お店の定休日とご自身の休みは、すべてのグループで自動振り分けの対象日から除外されます。提案日付は「反映する」を押すまでカレンダーには反映されません。
+      一覧は実行予定日(提案日付)の近い順に並びます。優先度と固定の指定はカレンダーごとに、この端末のブラウザに保存されます。自動振り分けは固定していないタスクを、対象期間の中で優先度順・件数上限を守りながら満遍なく配置します(例: 期間13日でタスク4件なら1・5・9・13日目に配置)。業務管理タブはタスク名に「三宅」を含むもののみ表示します。お店の定休日とご自身の休みは、すべてのグループで自動振り分けの対象日から除外されます。月曜は定休日データの取得に関わらず、常に自動振り分けの対象外です。提案日付は「反映する」を押すまでカレンダーには反映されません。
     </div>
   </div>
 
@@ -235,6 +235,14 @@
     const d = new Date(dateStr + "T00:00:00Z");
     d.setUTCDate(d.getUTCDate() + n);
     return d.toISOString().slice(0, 10);
+  }
+  // Mondays are always the store's closed day regardless of whether the SiLO
+  // calendar fetch above succeeded — this is a hard rule, not just a fallback.
+  function isMonday(dateStr) {
+    return new Date(dateStr + "T00:00:00Z").getUTCDay() === 1;
+  }
+  function isBlockedDate(dateStr) {
+    return isMonday(dateStr) || (blockedDates && blockedDates.has(dateStr));
   }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -466,7 +474,7 @@
     let html = "";
     events.forEach(e => {
       const overloaded = (load[e.dateStr] || 0) > capacity;
-      const isBlocked = blockedDates && blockedDates.has(e.dateStr);
+      const isBlocked = isBlockedDate(e.dateStr);
       html += '<div class="card neu ' + (overloaded ? "overload" : "") + '" data-id="' + e.id + '">';
       html += '<div class="card-top">';
       html += '<div class="card-date">' + e.dateStr + (isBlocked ? '<span class="blocked-tag">定休/休み</span>' : '') + '</div>';
@@ -525,7 +533,7 @@
     const dayList = [];
     for (let i = 0; i < horizon; i++) {
       const d = addDays(start, i);
-      if (!blockedDates || !blockedDates.has(d)) dayList.push(d);
+      if (!isBlockedDate(d)) dayList.push(d);
     }
 
     const dayLoad = {};
